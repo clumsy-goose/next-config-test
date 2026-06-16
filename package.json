@@ -1,0 +1,17 @@
+{
+  "name": "next-config-test",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Next.js project that exercises ISR/SSR/CSR/SSG plus comprehensive headers/redirects/rewrites in next.config.js, with a verification doc and a test runner.",
+  "scripts": {
+    "dev": "next dev -p 3000",
+    "build": "next build",
+    "start": "next start -p 3000",
+    "test:config": "node test-runner.mjs"
+  },
+  "dependencies": {
+    "next": "15.4.7",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  }
+}
