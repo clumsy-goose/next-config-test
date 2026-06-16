@@ -1,0 +1,3 @@
+PRIORITY=filesystem
+served-by=public/priority/fs-after.txt
+note=this static file wins over an afterFiles rewrite, so you SHOULD see this content

@@ -602,6 +602,63 @@ const CONDITIONAL_CASES = [
     expect: <>has query preview=1 → 注入 <code style={styles.code}>X-Preview-Mode</code> + no-store。</> },
 ]
 
+// 反例：验证 beforeFiles > filesystem > afterFiles > dynamic-route > fallback 优先级
+// 默认渲染为直链导航 (NavigateRow)，方便用户在新标签页直接看到地址栏 + 响应 body
+const PRIORITY_COUNTER_EXAMPLES = [
+  { id: 'CE1',
+    path: '/priority/before-fs.txt',
+    navHint: '↗ 应回 /api/health 的 JSON,而不是 .txt 文件内容',
+    expect: (
+      <>
+        <strong>beforeFiles &gt; filesystem</strong>。<code style={styles.code}>public/priority/before-fs.txt</code> 文件存在，
+        但 beforeFiles rewrite 抢在 filesystem 之前命中并改写到 <code style={styles.code}>/api/health</code>。
+        预期 body 是 health JSON (<code style={styles.code}>endpoint:&quot;/api/health&quot;</code>)，
+        <em>不是</em> 文件文本 <code style={styles.code}>PRIORITY=filesystem...</code>。
+      </>
+    ) },
+  { id: 'CE2',
+    path: '/priority/fs-after.txt',
+    navHint: '↗ 应直接拿到文件文本',
+    expect: (
+      <>
+        <strong>filesystem &gt; afterFiles</strong>。同样的 source 也写到了 afterFiles，但 filesystem 优先。
+        预期 body 是文件文本 <code style={styles.code}>PRIORITY=filesystem...</code>，
+        <em>不是</em> /api/health JSON。
+      </>
+    ) },
+  { id: 'CE3',
+    path: '/api/ce3/42',
+    navHint: '↗ 应回 /api/auth/login 而不是动态路由的 winner JSON',
+    expect: (
+      <>
+        <strong>afterFiles &gt; dynamic-route</strong>。<code style={styles.code}>app/api/ce3/[id]/route.js</code> 动态路由存在，
+        afterFiles <code style={styles.code}>/api/ce3/:id → /api/auth/login</code> 在动态路由解析前命中。
+        预期 body 是 <code style={styles.code}>action:&quot;please-login&quot;</code>，
+        <em>不是</em> <code style={styles.code}>winner:&quot;dynamic-route&quot;</code>。
+      </>
+    ) },
+  { id: 'CE4',
+    path: '/api/ce4',
+    navHint: '↗ 应回 winner:"real-route"，fallback 不该触发',
+    expect: (
+      <>
+        <strong>dynamic-route &gt; fallback</strong>。<code style={styles.code}>app/api/ce4/route.js</code> 真实路由存在；
+        fallback 也写了 <code style={styles.code}>/api/ce4 → /api/auth/login</code> 但永远不会被触发。
+        预期 body 是 <code style={styles.code}>winner:&quot;real-route&quot;</code>。
+      </>
+    ) },
+  { id: 'CE5',
+    path: '/ce5/anything/here',
+    navHint: '↗ /ce5/* 无真实路由,fallback 兜底生效',
+    expect: (
+      <>
+        <strong>fallback 兜底</strong>。<code style={styles.code}>/ce5/*</code> 没有任何 page/route 对应；
+        fallback <code style={styles.code}>/ce5/:path* → /api/auth/login</code> 在所有阶段 miss 后接住。
+        预期 body 是 <code style={styles.code}>action:&quot;please-login&quot;</code>。
+      </>
+    ) },
+]
+
 // ============== 表格容器 ==============
 function CaseTable({ cases, RowComponent }) {
   return (
@@ -722,14 +779,32 @@ export default function HomePage() {
       </section>
 
       <section style={styles.section}>
-        <h2 style={styles.h2}>⑥ 一键自动化（CLI，含严格 3xx 状态断言）</h2>
+        <h2 style={styles.h2}>⑥ 路由阶段优先级反例（counter-examples）</h2>
+        <p style={styles.small}>
+          同一个 URL 同时被多种规则／文件覆盖时，谁优先？这一组用 5 个最小反例验证
+          <strong>{' '}beforeFiles &gt; filesystem &gt; afterFiles &gt; dynamic-route &gt; fallback{' '}</strong>
+          的优先级。点击在新标签页打开，比较地址栏 URL 与 body 即可判定哪一阶段命中。
+          详细推理见{' '}
+          <a
+            style={styles.link}
+            href="https://github.com/clumsy-goose/next-config-test/blob/main/V3_PHASES.md"
+          >
+            V3_PHASES.md
+          </a>
+          。
+        </p>
+        <CaseTable cases={PRIORITY_COUNTER_EXAMPLES} RowComponent={SmartRow} />
+      </section>
+
+      <section style={styles.section}>
+        <h2 style={styles.h2}>⑦ 一键自动化（CLI，含严格 3xx 状态断言）</h2>
         <pre style={styles.pre}>{`# 本地：先 npm run build && npm run start
 node test-runner.mjs http://localhost:3000
 
 # 部署后：
 node test-runner.mjs https://your-app.example.com`}</pre>
         <p style={styles.small}>
-          脚本零依赖，覆盖 50+ 用例，使用{' '}
+          脚本零依赖，覆盖 60 用例（含 5 条反例），使用{' '}
           <code style={styles.code}>redirect: 'manual'</code>{' '}
           严格断言 307/308 状态码与 Location；任意用例失败则进程退出码非 0。
         </p>

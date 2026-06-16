@@ -292,6 +292,14 @@ const nextConfig = {
           has: [{ type: 'query', key: 'beta', value: '1' }],
           destination: '/api/beta/greeting',
         },
+
+        // CE1) 反例：beforeFiles > filesystem
+        // public/priority/before-fs.txt 静态文件存在，但 beforeFiles 抢先生效，
+        // 因此响应应来自 /api/health 而非该文件内容。
+        {
+          source: '/priority/before-fs.txt',
+          destination: '/api/health',
+        },
       ],
       afterFiles: [
         // AR1) /healthz -> /api/health
@@ -303,14 +311,44 @@ const nextConfig = {
           source: '/shop/:id(\\d{1,})',
           destination: '/api/products/:id',
         },
-        // AR4) /echo-it -> /api/echo?from=alias（保留原 query 自动合并）
+        // AR4) /echo-it -> /api/echo?from=alias
         { source: '/echo-it', destination: '/api/echo?from=alias' },
+
+        // CE2) 反例：filesystem > afterFiles
+        // public/priority/fs-after.txt 静态文件存在，afterFiles 不会抢跑，
+        // 因此响应应是文件内容（而不是 /api/health JSON）。
+        {
+          source: '/priority/fs-after.txt',
+          destination: '/api/health',
+        },
+
+        // CE3) 反例：afterFiles > dynamic-route
+        // 同时存在 app/api/ce3/[id]/route.js 动态路由，
+        // 但 afterFiles 在动态路由解析之前命中，因此响应来自 /api/auth/login。
+        {
+          source: '/api/ce3/:id',
+          destination: '/api/auth/login',
+        },
       ],
       fallback: [
         // FR1) /proxy/posts/:id -> 受信任白名单外部 API
         {
           source: '/proxy/posts/:id(\\d{1,})',
           destination: `${TRUSTED_PROXY_ORIGIN}/posts/:id`,
+        },
+
+        // CE4) 反例：dynamic-route > fallback
+        // 同时存在 app/api/ce4/route.js 真实路由，本 fallback 永远不应被触发。
+        {
+          source: '/api/ce4',
+          destination: '/api/auth/login',
+        },
+
+        // CE5) 反例：fallback 兜底（无真实路由对应）
+        // 没有任何 page / route 对应 /ce5/*，因此 fallback 在所有阶段 miss 后生效。
+        {
+          source: '/ce5/:path*',
+          destination: '/api/auth/login',
         },
       ],
     }

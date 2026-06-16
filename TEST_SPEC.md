@@ -129,7 +129,59 @@
 
 ---
 
-## 7. CSR 页面客户端行为（人工 / 浏览器验证）
+## 7. 路由阶段优先级反例（counter-examples）
+
+> 验证 **`beforeFiles > filesystem > afterFiles > dynamic-route > fallback`** 的执行顺序。
+> 每条反例都设计成"两种规则同时指向同一个 URL"，命中谁就证明了谁的优先级更高。
+> 推理详见 [`V3_PHASES.md`](./V3_PHASES.md)。
+
+| # | 验证 | 同时存在 | 请求 | 期望 body | 反向断言 |
+|---|---|---|---|---|---|
+| **CE1** | beforeFiles 抢在 filesystem 之前 | `public/priority/before-fs.txt` 文件 + beforeFiles `/priority/before-fs.txt → /api/health` | `GET /priority/before-fs.txt` | JSON `endpoint:"/api/health"` | body 不应含 `PRIORITY=filesystem` 文本 |
+| **CE2** | filesystem 抢在 afterFiles 之前 | `public/priority/fs-after.txt` 文件 + afterFiles `/priority/fs-after.txt → /api/health` | `GET /priority/fs-after.txt` | 文件文本 `PRIORITY=filesystem...` | body 不应是 `/api/health` JSON |
+| **CE3** | afterFiles 抢在动态路由之前 | `app/api/ce3/[id]/route.js` 动态路由 + afterFiles `/api/ce3/:id → /api/auth/login` | `GET /api/ce3/42` | JSON `action:"please-login"` | body 不应含 `winner:"dynamic-route"` |
+| **CE4** | 真实路由命中,fallback 永不触发 | `app/api/ce4/route.js` 真实路由 + fallback `/api/ce4 → /api/auth/login` | `GET /api/ce4` | JSON `winner:"real-route"` | body 不应含 `action:"please-login"` |
+| **CE5** | 所有阶段 miss 时 fallback 兜底 | 仅 fallback `/ce5/:path* → /api/auth/login`（无任何真实路由） | `GET /ce5/anything/here` | JSON `action:"please-login"`、`endpoint:"/api/auth/login"` | — |
+
+### 命中链路（对应 V3 phases）
+
+```
+CE1 请求 /priority/before-fs.txt
+  └─ 初始段 BR命中: dest=/api/health, check:true   ← rewrite 抢跑
+      └─ 回顶端,fs miss,resource 命中 health.func
+         返回 health JSON ✓
+
+CE2 请求 /priority/fs-after.txt
+  └─ 初始段没命中
+      └─ handle:filesystem 找到 static/priority/fs-after.txt ✓
+         直接返回文件,afterFiles 无机会运行
+
+CE3 请求 /api/ce3/42
+  └─ 初始段没命中
+      └─ filesystem miss
+          └─ afterFiles AR (CE3) 命中: dest=/api/auth/login   ← rewrite 抢在 resource 前
+              └─ 回顶端,resource 命中 auth/login.func
+                 返回 login JSON ✓
+
+CE4 请求 /api/ce4
+  └─ 初始段没命中
+      └─ filesystem miss
+          └─ afterFiles 没命中
+              └─ handle:resource 命中 ce4.func ✓ ← 真实路由先接住
+                 返回 real-route JSON,fallback 永不到达
+
+CE5 请求 /ce5/anything/here
+  └─ 初始段没命中
+      └─ filesystem miss
+          └─ afterFiles 没命中
+              └─ resource miss(无 ce5.func)
+                  └─ fallback FR (CE5) 命中: dest=/api/auth/login ✓
+                     返回 login JSON
+```
+
+---
+
+## 8. CSR 页面客户端行为（人工 / 浏览器验证）
 
 - 打开 `${BASE}/csr`，**初始 HTML** 不含 JSON 数据（仅 `Loading on client…`）。
 - 浏览器挂载后客户端发起 `GET /api/hello?name=CSR`，页面呈现含 `message: "Hello, CSR!"` 的代码块。
@@ -137,7 +189,7 @@
 
 ---
 
-## 8. 测试覆盖矩阵
+## 9. 测试覆盖矩阵
 
 | 配置类别 | 写法 | 覆盖用例 |
 |---|---|---|
@@ -170,3 +222,8 @@
 | Rewrites · afterFiles 正则段 | `/shop/:id(\\d+)` | AR3 / AR3n |
 | Rewrites · afterFiles 注入 query | `?from=alias` | AR4 |
 | Rewrites · fallback 反向代理 | `/proxy/posts/:id` | FR1 / FR1n |
+| 优先级 · beforeFiles &gt; filesystem | rewrite 抢在静态文件之前 | CE1 |
+| 优先级 · filesystem &gt; afterFiles | 静态文件抢在 rewrite 之前 | CE2 |
+| 优先级 · afterFiles &gt; dynamic-route | rewrite 抢在动态路由之前 | CE3 |
+| 优先级 · dynamic-route &gt; fallback | 真实路由命中,fallback 永不触发 | CE4 |
+| 优先级 · fallback 兜底 | 所有阶段 miss 时 fallback 生效 | CE5 |

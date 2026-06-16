@@ -1,0 +1,3 @@
+PRIORITY=filesystem
+served-by=public/priority/before-fs.txt
+note=this static file is shadowed by a beforeFiles rewrite, so you should NOT see it
