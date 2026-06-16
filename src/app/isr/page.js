@@ -6,7 +6,8 @@ export default async function ISRPage() {
   return (
     <main>
       <h1>ISR Page</h1>
-      <p data-testid="rendered-at">renderedAt: {renderedAt}</p>
+      {/* 单一 text node 写法，避免 React SSR 注释切断动态值。 */}
+      <p data-testid="rendered-at">{`renderedAt: ${renderedAt}`}</p>
       <p>10 秒内访问得到相同内容；超时后下一次访问会触发后台再生。</p>
     </main>
   )

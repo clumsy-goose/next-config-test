@@ -23,21 +23,23 @@ const nextConfig = {
    *   - no-store / SWR 等多种 Cache-Control
    * ==================================================================== */
   async headers() {
-    return [
-      // H1) 全站基础安全头
+    // H1) 全站基础安全头
+    // 注意：在某些托管 (例如 EdgeOne) 上，"/:path*" 不会匹配根路径 "/"，
+    // 因此需要为 "/" 单独再下发同一份安全头。
+    const GLOBAL_SECURITY_HEADERS = [
+      { key: 'X-Powered-By-Test', value: 'next-config-test' },
+      { key: 'X-Content-Type-Options', value: 'nosniff' },
+      { key: 'X-Frame-Options', value: 'SAMEORIGIN' },
+      { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
       {
-        source: '/:path*',
-        headers: [
-          { key: 'X-Powered-By-Test', value: 'next-config-test' },
-          { key: 'X-Content-Type-Options', value: 'nosniff' },
-          { key: 'X-Frame-Options', value: 'SAMEORIGIN' },
-          { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
-          {
-            key: 'Strict-Transport-Security',
-            value: 'max-age=31536000; includeSubDomains',
-          },
-        ],
+        key: 'Strict-Transport-Security',
+        value: 'max-age=31536000; includeSubDomains',
       },
+    ]
+
+    return [
+      { source: '/', headers: GLOBAL_SECURITY_HEADERS },
+      { source: '/:path*', headers: GLOBAL_SECURITY_HEADERS },
 
       // H2) 静态资产长缓存（命名通配 + immutable）
       {

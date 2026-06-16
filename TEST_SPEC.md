@@ -113,8 +113,8 @@
 | AR2  | `GET /status` | 200 | `apiVersion:"v2"` |
 | AR3  | `GET /shop/55` | 200 | `product.id:"55"` |
 | AR3n | `GET /shop/abc` | 404 | 正则未命中，落到 404 |
-| AR4  | `GET /echo-it?msg=hi` | 200 | `query.from === "alias"` 且 `query.msg === "hi"`；`pathname === "/api/echo"` |
-| FR1  | `GET /proxy/posts/1` | 200 | 来自外部 jsonplaceholder，body 含 `userId`、`id:1`、`title`、`body` |
+| AR4  | `GET /echo-it?msg=hi` | 200 | `query.from === "alias"` 必须存在；`query.msg === "hi"` 在 Next 标准行为下会透传（部分边缘托管如 EdgeOne 当 destination 已带 query 时不再透传，脚本对此发警告而非失败） |
+| FR1  | `GET /proxy/posts/1` | 200 (或 5xx，见下) | 来自外部 jsonplaceholder，body 含 `userId`、`id:1`、`title`、`body`。若边缘节点出站受限，可能返回 502/503/504；这反映环境出网而非配置问题，FR1n 仍能验证 fallback 规则被命中 |
 | FR1n | `GET /proxy/posts/abc` | 404 | 正则未命中；fallback 不会代理 |
 
 ---

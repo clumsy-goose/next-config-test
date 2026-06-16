@@ -7,7 +7,8 @@ export default function SSGPage() {
   return (
     <main>
       <h1>SSG Page</h1>
-      <p data-testid="build-time">buildTime: {BUILD_TIME}</p>
+      {/* 单一 text node，避免 React SSR 注释把 buildTime 切开。 */}
+      <p data-testid="build-time">{`buildTime: ${BUILD_TIME}`}</p>
       <p>构建期固定，多次访问内容不变。</p>
     </main>
   )
