@@ -336,6 +336,17 @@ const nextConfig = {
           source: '/api/ce6/:path*',
           destination: '/api/auth/login',
         },
+
+        // SIBLING) 验证 afterFiles 是否能抢在 Edge 静态路由之前
+        // 配套: app/api/sibling/intercept-edge/route.js 故意不存在,
+        //       app/api/sibling/edge/route.js 才是真正的 Edge 函数
+        //       这条 rewrite 让 /api/sibling/intercept-edge → /api/auth/login,
+        //       但**真正测的**是同级 Edge 函数 /api/sibling/edge 是否被它拦截:
+        //       下面再加一条直接命中 Edge 静态路径的 rewrite
+        {
+          source: '/api/sibling/edge',
+          destination: '/api/auth/login',
+        },
       ],
       fallback: [
         // FR1) /proxy/posts/:id -> 受信任白名单外部 API

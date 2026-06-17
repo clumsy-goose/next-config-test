@@ -589,6 +589,47 @@ test('CE6', 'afterFiles 通配 抢在 fallback 精准 之前 (书写顺序契约
   )
 })
 
+test('SIBLING-DYN', 'Node 动态路由 /api/sibling/42 命中 [id]', async () => {
+  // 同级有静态精准 (sibling/edge) 与动态参数 ([id]) 两个 route handler
+  // 请求 /api/sibling/42 应命中 [id] 动态路由
+  const r = await http('/api/sibling/42')
+  eq(r.status, 200, 'status')
+  eq(r.json?.endpoint, '/api/sibling/[id]', 'endpoint')
+  eq(r.json?.runtime, 'nodejs', 'runtime')
+  eq(r.json?.id, '42', 'id 注入正确')
+  eq(r.json?.matchedAs, 'dynamic', 'matchedAs')
+})
+
+test('SIBLING-EDGE-vs-AFTER',
+    '同级 Edge 静态路由 vs afterFiles rewrite — 环境差异探测器', async () => {
+  // 配置:
+  //   app/api/sibling/edge/route.js (Edge runtime, 静态精准)
+  //   afterFiles: /api/sibling/edge → /api/auth/login
+  //
+  // 行为差异:
+  //   - 严格 v3 spec (Vercel 边缘):
+  //       handle:"filesystem" → static 没 → afterFiles 命中 → 跳到 /api/auth/login
+  //       期望: action:"please-login"
+  //   - next start standalone (本地):
+  //       Next.js server 把 functions 优先级提到 afterFiles 之前,直接命中 Edge 函数
+  //       期望: runtime:"edge", matchedAs:"static"
+  //   - EdgeOne 边缘:待实测
+  //
+  // 测试不强断言,只识别两种合法分支并标注;让用户在每个环境跑一次就能知道
+  // 该环境的优先级实现。
+  const r = await http('/api/sibling/edge')
+  eq(r.status, 200, 'status')
+  if (r.json?.runtime === 'edge' && r.json?.matchedAs === 'static') {
+    console.log('   ℹ 此环境: Edge 静态函数 优先 (与 next start standalone 一致;Functions 比 afterFiles 优先)')
+  } else if (r.json?.action === 'please-login') {
+    console.log('   ℹ 此环境: afterFiles rewrite 优先 (严格遵循 v3 spec;afterFiles 比 functions 优先)')
+  } else {
+    throw new AssertionError(
+      `Unknown response shape: ${JSON.stringify(r.json).slice(0, 200)}`
+    )
+  }
+})
+
 // =====================================================================
 // 运行
 // =====================================================================
