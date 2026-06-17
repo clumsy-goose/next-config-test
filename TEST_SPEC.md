@@ -142,6 +142,7 @@
 | **CE3** | afterFiles 抢在动态路由之前 | `app/api/ce3/[id]/route.js` 动态路由 + afterFiles `/api/ce3/:id → /api/auth/login` | `GET /api/ce3/42` | JSON `action:"please-login"` | body 不应含 `winner:"dynamic-route"` |
 | **CE4** | 真实路由命中,fallback 永不触发 | `app/api/ce4/route.js` 真实路由 + fallback `/api/ce4 → /api/auth/login` | `GET /api/ce4` | JSON `winner:"real-route"` | body 不应含 `action:"please-login"` |
 | **CE5** | 所有阶段 miss 时 fallback 兜底 | 仅 fallback `/ce5/:path* → /api/auth/login`（无任何真实路由） | `GET /ce5/anything/here` | JSON `action:"please-login"`、`endpoint:"/api/auth/login"` | — |
+| **CE6** | **书写顺序契约**：afterFiles 段早于 fallback 段评估 | afterFiles `/api/ce6/:path* → /api/auth/login` (通配) + fallback `/api/ce6/keep → /api/health` (精准)，无 real route | `GET /api/ce6/keep` | JSON `action:"please-login"` (afterFiles 通配先命中) | body 不应是 `endpoint:"/api/health"`，否则说明托管按 specificity 把 fallback 提前 |
 
 ### 命中链路（对应 V3 phases）
 
@@ -227,3 +228,4 @@ CE5 请求 /ce5/anything/here
 | 优先级 · afterFiles &gt; dynamic-route | rewrite 抢在动态路由之前 | CE3 |
 | 优先级 · dynamic-route &gt; fallback | 真实路由命中,fallback 永不触发 | CE4 |
 | 优先级 · fallback 兜底 | 所有阶段 miss 时 fallback 生效 | CE5 |
+| 优先级 · 书写顺序契约 (afterFiles 段先于 fallback 段) | 隐式 specificity 重排会破坏此契约 | CE6 |

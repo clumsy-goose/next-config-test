@@ -657,6 +657,21 @@ const PRIORITY_COUNTER_EXAMPLES = [
         预期 body 是 <code style={styles.code}>action:&quot;please-login&quot;</code>。
       </>
     ) },
+  { id: 'CE6',
+    path: '/api/ce6/keep',
+    navHint: '↗ afterFiles 通配应抢在 fallback 精准之前',
+    expect: (
+      <>
+        <strong>书写顺序契约</strong>。afterFiles{' '}
+        <code style={styles.code}>/api/ce6/:path* → /api/auth/login</code> (通配)
+        与 fallback{' '}
+        <code style={styles.code}>/api/ce6/keep → /api/health</code> (精准) 同时存在。
+        Next.js 文档承诺 afterFiles 整段先于 fallback 评估,因此通配先命中,
+        body 应是 <code style={styles.code}>action:&quot;please-login&quot;</code>。
+        若 body 是 <code style={styles.code}>endpoint:&quot;/api/health&quot;</code>,
+        说明托管平台按 specificity 把 fallback 精准重排到 afterFiles 通配之前 (违反契约)。
+      </>
+    ) },
 ]
 
 // ============== 表格容器 ==============
@@ -804,7 +819,7 @@ node test-runner.mjs http://localhost:3000
 # 部署后：
 node test-runner.mjs https://your-app.example.com`}</pre>
         <p style={styles.small}>
-          脚本零依赖，覆盖 60 用例（含 5 条反例），使用{' '}
+          脚本零依赖，覆盖 61 用例（含 6 条优先级反例），使用{' '}
           <code style={styles.code}>redirect: 'manual'</code>{' '}
           严格断言 307/308 状态码与 Location；任意用例失败则进程退出码非 0。
         </p>

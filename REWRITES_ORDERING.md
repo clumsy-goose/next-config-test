@@ -316,6 +316,19 @@ $ jq '.routes' .edgeone/routes.json | grep -nE '"src"|"handle"'
 
 ## 7. 实操建议
 
+### 立场（基于源码 + 实测）
+
+> **rewrite 规则不应该被 adapter / CLI 按 specificity 重排，必须严格按用户书写顺序加入 routes 数组。**
+
+理由：
+
+1. **Next.js 公开契约就是"按声明顺序"**。文档原文："Rewrites are checked in the order they're defined." 没有 specificity 自动排序的承诺。
+2. **`first match wins` 是用户的工具，不是 bug**。用户故意让通配规则屏蔽后续精准规则是合法用法（例如全站维护拦截）。隐式重排会破坏这种意图。
+3. **路径 specificity 没有客观定义**。`tef-cli` 现行算法（精准 0 < 单段 1 < 多段 2 < catch-all 3）是一种启发式，会让 `/echo-it`(精准) 与 `/shop/:id`(单段) 这种互斥路径无端调位。
+4. **`fallback` 段名字本身就是"兜底"**。把它和 afterFiles 一锅排序就让"兜底"语义失效。
+5. **隐式排序违反 PoLA**。读 `next.config.js` 看不出 EdgeOne 会在背后做什么，调试路径变长。
+6. **Vercel 与 OpenNext 主流实现都不排序**——这本身就是行业事实标准的证据。
+
 ### 给应用开发者
 
 如果你的 `next.config.js` 里 `afterFiles` 与 `fallback` **并不依赖严格的相对顺序**（例如 source 互相没有交集），三家行为等价，安全。
@@ -326,13 +339,23 @@ $ jq '.routes' .edgeone/routes.json | grep -nE '"src"|"handle"'
 2. "同段内规则按书写顺序匹配"
 3. "更通用的 source 写在更精准的 source 之后兜底"
 
-### 给 adapter 作者
+本项目的 **CE6** 就是这类场景的最小反例：
+```js
+afterFiles: [{ source: '/api/ce6/:path*', destination: '/api/auth/login' }]   // 通配
+fallback:   [{ source: '/api/ce6/keep',   destination: '/api/health'      }]  // 精准
+```
+- Next 标准语义：`/api/ce6/keep` → afterFiles 通配先命中 → 返回 login JSON
+- 若被 sortRoutes 重排：fallback 精准提前 → 返回 health JSON ← 违反契约
 
-EdgeOne CLI 的 `sortRoutes` 是出于"按 specificity 排序减少误命中"的善意，但与 v3 spec 规定的"按声明顺序"原则相违背。如果要修正：
+### 给 adapter / CLI 作者（特指 EdgeOne tef-cli）
 
-- 选项 A：跳过 sortRoutes 直接透传 OpenNext 输出的顺序（最小改动）
-- 选项 B：把 `afterFiles` 与 `fallback` 在传入 sortRoutes 前**分别**打上 stable bucket 标记，确保 fallback 段永远排在 afterFiles 段之后
-- 选项 C：把这一行为做成可配置开关
+`route-sorter.ts:65-111` 的 `sortRoutes` 出于"按 specificity 排序减少误命中"的善意，但与 v3 spec 规定的"按声明顺序"原则相违背。建议修正：
+
+- **首选 — 选项 A：去掉 sortRoutes，直接透传 OpenNext 输出的顺序**。OpenNext fork 已经按 Next 规范把 routes 排得整整齐齐，tef-cli 不需要"二次智能"。
+- 选项 B：把 `afterFiles` 与 `fallback` 在传入 sortRoutes 前**分别**打 stable bucket 标记，让两段相对位置固定（fallback 段永远在 afterFiles 段之后）。但这要求 `extractAdapterRules` 能从 OpenNext 产物里区分两段——目前它只切 filesystem 一刀。
+- 选项 C：把这一行为做成可配置开关（`sortAfterFiles: false`），让保守用户可关闭。
+
+**最小风险路径就是选项 A**，因为 OpenNext fork 写出的顺序和 Vercel 一致，根本不需要 tef-cli 再加一层重排。
 
 ---
 

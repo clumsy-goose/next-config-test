@@ -329,6 +329,13 @@ const nextConfig = {
           source: '/api/ce3/:id',
           destination: '/api/auth/login',
         },
+
+        // CE6 配套：afterFiles 通配 (matchType=2)
+        // 与 fallback 中的精准规则 /api/ce6/keep (matchType=0) 配对验证书写顺序契约。
+        {
+          source: '/api/ce6/:path*',
+          destination: '/api/auth/login',
+        },
       ],
       fallback: [
         // FR1) /proxy/posts/:id -> 受信任白名单外部 API
@@ -349,6 +356,16 @@ const nextConfig = {
         {
           source: '/ce5/:path*',
           destination: '/api/auth/login',
+        },
+
+        // CE6) 反例：fallback 必须晚于 afterFiles 评估（书写顺序契约）
+        // 配合 afterFiles 中 /api/ce6/(.*) → /api/auth/login (通配,low specificity)。
+        // 这条 fallback 故意写得**更精准** (matchType=0)。
+        // 在 Next.js / Vercel / OpenNext 标准实现下：afterFiles 通配先命中,fallback 永不触发。
+        // 如果托管平台对 afterFiles+fallback 按 specificity 重排,本条会抢跑 → 行为偏离。
+        {
+          source: '/api/ce6/keep',
+          destination: '/api/health',
         },
       ],
     }

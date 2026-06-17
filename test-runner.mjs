@@ -562,6 +562,33 @@ test('CE5', 'fallback 兜底：所有阶段 miss 时 fallback 才生效', async 
   eq(r.json?.endpoint, '/api/auth/login', 'fallback target')
 })
 
+test('CE6', 'afterFiles 通配 抢在 fallback 精准 之前 (书写顺序契约)', async () => {
+  // 配置:
+  //   afterFiles: /api/ce6/:path*  → /api/auth/login   (通配 matchType=2)
+  //   fallback:   /api/ce6/keep    → /api/health        (精准 matchType=0)
+  //   /api/ce6/* 没有任何 route handler 文件
+  //
+  // Next.js 标准语义:
+  //   afterFiles 整段在 fallback **之前**评估 → 通配命中 → 改写到 /api/auth/login
+  //   fallback 永远不会被触发
+  //   响应应是 action:"please-login"
+  //
+  // 故障模式（指示托管平台对 afterFiles+fallback 做了 specificity 重排）:
+  //   - 看到 endpoint:"/api/health" → fallback 精准抢跑 afterFiles 通配
+  //
+  // 注意: 这里**不能**为 /api/ce6/keep 创建 route handler 文件,因为静态 route 在
+  // Next 内部会被算作 filesystem 阶段产物,优先级高于 afterFiles,会让测试白噪声。
+  // 真正测的是 "afterFiles 段 > fallback 段" 的相对顺序。
+  const r = await http('/api/ce6/keep')
+  eq(r.status, 200, 'status')
+  eq(r.json?.action, 'please-login',
+     '应命中 afterFiles 通配重写到 /api/auth/login;若看到其他响应说明托管做了 specificity 重排,违反 Next 书写顺序契约')
+  assert(
+    r.json?.endpoint !== '/api/health',
+    '故障: fallback 精准抢跑 afterFiles 通配 (托管 sortRoutes bug)'
+  )
+})
+
 // =====================================================================
 // 运行
 // =====================================================================

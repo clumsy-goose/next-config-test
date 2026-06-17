@@ -7,17 +7,19 @@
 
 ## Q1. EdgeOne CLI 对 afterFiles + fallback 的二次排序是 bug 还是有意为之？
 
+**当前结论（待 EdgeOne 团队确认）**：基于跨实现源码对比 + Next.js 文档语义，**这应当被视作 bug**，理由见 `REWRITES_ORDERING.md` 第 7 节"立场"。建议修复方案是**直接去掉 `route-sorter.ts:65-111` 的 sortRoutes 调用**——`@edgeone/opennextjs-pages` 已按 Next 规范写好顺序，tef-cli 不需要再重排。
+
 **背景**：
 - `tef-cli/src/pages/builder/utils/route-sorter.ts:65-111` 的 `sortRoutes` 把 OpenNext fork 已经按用户书写顺序写好的 `afterFiles + fallback` 段重新按 `matchType + specificity` 排了一次。
-- 这与 Next.js / Vercel / OpenNext 主流的"严格保留声明顺序"相违背，理论上当 fallback specificity 高于 afterFiles 时会命中错位。
-- 但我们项目 5 个反例（CE1~CE5）目前在 EdgeOne 上**碰巧全绿**，因为 specificity 排序结果与 Next 语义偶然一致。
+- 这与 Next.js / Vercel / OpenNext 主流的"严格保留声明顺序"相违背。
+- 项目里 **CE6 反例** 专门验证此场景：`afterFiles: /api/ce6/:path*` 通配 + `fallback: /api/ce6/keep` 精准。本地 next start 模式 CE6 通过（标准语义生效）；如 EdgeOne 部署 CE6 失败，即直接证明 sortRoutes 把 fallback 提前了。
 
-**需要确认**：
-- (a) 这是 EdgeOne 团队为了"减少误命中"主动加的优化，还是借鉴别处时遗留的副作用？
-- (b) 是否计划修复，让 fallback 严格晚于 afterFiles？
-- (c) 是否可以做成可配置开关？
+**需要外部确认**：
+- (a) EdgeOne 团队是否同意修复（去掉 sortRoutes，直接透传 OpenNext 顺序）？
+- (b) 是否需要兼容期 / 配置开关？
+- (c) 由谁跟进——给 EdgeOne 工单 / 给 ef-dev-tools 仓库提 PR / 都做？
 
-**复现路径**：写一对反例 `afterFiles: [{source:'/api/(.*)'}]` + `fallback: [{source:'/api/health'}]`，观察 EdgeOne 与 Vercel 的实际命中是否一致。
+**复现路径**：本项目部署到 EdgeOne 后跑 `node test-runner.mjs <BASE>`，观察 CE6 是否绿。如果挂，说明 sortRoutes 抢了 afterFiles。
 
 ---
 
