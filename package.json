@@ -10,7 +10,7 @@
     "test:config": "node test-runner.mjs"
   },
   "dependencies": {
-    "next": "15.4.7",
+    "next": "^16.2.9",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   }

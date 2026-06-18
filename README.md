@@ -7,9 +7,11 @@ A Next.js 15 (App Router) project that exercises:
 - 13+ **API endpoints** covering each config branch
 - A **test specification** (`TEST_SPEC.md`) describing the expected outcome of every endpoint
 - A **dependency-free test runner** (`test-runner.mjs`) that exercises every case against a deployed URL
-- Architecture deep-dives: [`V3_PHASES.md`](./V3_PHASES.md) (Vercel Build Output v3 phase model)
-  and [`REWRITES_ORDERING.md`](./REWRITES_ORDERING.md) (cross-impl comparison of how
-  Vercel CLI / OpenNext fork / EdgeOne CLI handle rewrite ordering)
+- A **cross-environment signature probe** (`probe-env.mjs`) that compares `next start standalone` vs Vercel vs EdgeOne side-by-side
+- Architecture deep-dives:
+  - [`V3_PHASES.md`](./V3_PHASES.md) — Vercel Build Output v3 phase model
+  - [`REWRITES_ORDERING.md`](./REWRITES_ORDERING.md) — cross-impl comparison of rewrite ordering
+  - [`VALIDATION_PLAN.md`](./VALIDATION_PLAN.md) — three-environment validation procedure with real measurements
 
 ## Project layout
 
