@@ -12,6 +12,7 @@ A Next.js 15 (App Router) project that exercises:
   - [`V3_PHASES.md`](./V3_PHASES.md) — Vercel Build Output v3 phase model
   - [`REWRITES_ORDERING.md`](./REWRITES_ORDERING.md) — cross-impl comparison of rewrite ordering
   - [`VALIDATION_PLAN.md`](./VALIDATION_PLAN.md) — three-environment validation procedure with real measurements
+  - [`EDGEONE_FIX_PLAN.md`](./EDGEONE_FIX_PLAN.md) — concrete CLI fix plan to align EdgeOne with Vercel/Next semantics
 
 ## Project layout
 
