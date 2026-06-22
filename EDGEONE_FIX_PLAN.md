@@ -484,7 +484,7 @@ applyRewrite(req, route):
 
 ---
 
-## 8. 一句话总结
+## 8. 一句话总结（按反例视角）
 
 > **EdgeOne 与 Vercel 对齐三件事按优先级**：
 >
@@ -493,3 +493,203 @@ applyRewrite(req, route):
 > 3. **AR4 (destination query 合并) — 必须 runtime 修，CLI 无能为力**。
 >
 > 修完后跑 `node probe-env.mjs <三个URL>` 应该看到 "全部 3 个环境签名一致"。
+
+---
+
+## 9. edgeone.json 简化映射方案（在纯顺序 + 无 check:true 约束下）
+
+§1-§8 是「逐反例修」的视角。本节是**整体路线图**——在 EdgeOne 两条硬约束下，把 Vercel 的 phase 模型扁平化为 edgeone.json + routes.json 的契约。
+
+### 9.1 两条硬约束（不可让步）
+
+| 约束 | 影响 |
+|---|---|
+| **routes 数组严格顶向下顺序匹配** | 没有 phase 标记，桶之间靠位置区隔 |
+| **不支持 `check: true` 重启** | 任何 rewrite 必须 build 时静态展开成终态 |
+
+> 推论：runtime 不需要改路由表语义，**改造 95% 落在 CLI 端**。
+
+### 9.2 edgeone.json 字段契约（对齐 vercel.json）
+
+```jsonc
+{
+  "headers":   [ /* 按声明序，CLI 不重排 */ ],
+  "redirects": [ /* 按声明序，CLI 不重排 */ ],
+  "rewrites":  [ /* 按声明序，CLI 不重排；dest 静态展开成终态 */ ]
+}
+```
+
+**核心契约**：用户在 edgeone.json 里写啥顺序，routes.json 里就什么顺序。**CLI 任何"二次排序"都是 bug**。
+
+### 9.3 三个字段的 CLI 处理细则
+
+#### headers — 直接翻译
+
+```jsonc
+// edgeone.json
+{ "source": "/api/(.*)", "headers": [{ "key": "X-Tier", "value": "edge" }] }
+```
+↓ CLI 翻译为
+```jsonc
+// routes.json
+{ "src": "^/api/(.*)$", "headers": { "X-Tier": "edge" }, "continue": true }
+```
+
+#### redirects — 直接翻译，排在 headers 之前
+
+```jsonc
+// edgeone.json
+{ "source": "/old/:slug", "destination": "/new/:slug", "permanent": true }
+```
+↓ CLI 翻译为
+```jsonc
+// routes.json
+{ "src": "^/old/([^/]+)$", "headers": { "Location": "/new/$1" }, "status": 308 }
+```
+
+`permanent: true → 308`，`permanent: false → 307`，直接复用 Vercel `convertRedirects()` 的转译规则。
+
+#### rewrites — 静态展开 dest 链路（★ 核心改造）
+
+因为没有 `check: true`，每条 rewrite 必须**在 build 时解析到终态**。
+
+```jsonc
+// edgeone.json
+{ "source": "/healthz",      "destination": "/api/health" }       // 静态 dest
+{ "source": "/shop/:id",     "destination": "/api/products/:id" } // 动态 dest
+{ "source": "/proxy/:p*",    "destination": "https://up.com/:p*" }// 外部 dest
+```
+
+CLI 要做的 3 件事：
+
+1. **识别 dest 类型**：静态 function / 动态 function / 外部 URL / 静态文件
+2. **图遍历压平多跳链**：A → B → C 直接合成 A → C
+3. **发射带 `override: true` 的终态 route**
+
+↓ CLI 输出
+```jsonc
+// 静态 dest → 直接绑定 ssr-node
+{ "src": "^/healthz$", "server-name": "ssr-node", "dest": "/api/health", "override": true }
+
+// 动态 dest → 参数化展开到 src 上
+{ "src": "^/shop/([^/]+)$", "server-name": "ssr-node",
+  "dest": "/api/products/[id]?nxtPid=$1", "override": true }
+
+// 外部 dest → 反向代理
+{ "src": "^/proxy/(.+)$", "dest": "https://up.com/$1" }
+```
+
+### 9.4 完整的 routes.json 桶骨架
+
+```
+[
+  // 桶 1: redirects                          ← edgeone.json redirects，按声明序
+  { src: "^/home$", status: 308, headers: { Location: "/" } },
+  ...
+
+  // 桶 2: headers                            ← edgeone.json headers，按声明序
+  { src: "^/(.*)$", headers: {...}, continue: true },
+  ...
+
+  // 桶 3: 显式 function 入口                  ← ★ CLI 自动扫描注入
+  // 替代 Vercel 的 handle:filesystem 自动查找
+  { src: "^/api/headers$",      "server-name": "ssr-node", override: true },
+  { src: "^/api/sibling/edge$", "server-name": "ssr-edge", override: true },
+  ... (扫描 .vercel/output/functions/ 下所有静态路径 .func)
+
+  // 桶 4: rewrites（静态展开后）              ← edgeone.json rewrites，按声明序
+  { src: "^/healthz$", "server-name": "ssr-node", dest: "/api/health", override: true },
+  ...
+
+  // 桶 5: 动态路由参数化                      ← 承自 Next routes-manifest，trie 排序
+  { src: "^/api/products/([^/]+)$", "server-name": "ssr-node",
+    dest: "/api/products/[id]?nxtPid=$1" },
+  ...
+
+  // 桶 6: 兜底
+  { src: "/.*", status: 404 }
+]
+```
+
+### 9.5 优先级链对齐 Vercel
+
+| 优先级 | 类型 | 凭什么 |
+|---|---|---|
+| 1（最高） | redirects | 数组顶端，命中即 EXIT |
+| 2 | headers (continue:true) | 注入头后继续匹配，不抢人 |
+| 3 | **静态 function** | 桶 3 显式入口 + override:true |
+| 4 | rewrites | 桶 4，静态 function 之后 |
+| 5 | **动态 function** | 桶 5，rewrites 之后 |
+| 6 | 兜底 404 | 末尾 |
+
+**与 Vercel 在 vercel.json 模式下行为完全一致**：静态 API > rewrites > 动态 API。
+
+### 9.6 改造对反例的修复状态
+
+| 反例 | 此方案下的状态 | 修复机制 |
+|---|---|---|
+| **CE2** filesystem vs afterFiles | ✓ 一致 | 桶 3 静态文件入口在桶 4 rewrites 之前 |
+| **CE3** afterFiles vs dynamic-route | ✓ 一致 | 桶 4 rewrites 在桶 5 dynamic 之前 |
+| **CE6** afterFiles vs fallback | ✓ 一致 | edgeone.json 无 fallback 概念，分歧消失 |
+| **SIBLING** afterFiles vs Edge function | ✓ 一致 | 桶 3 显式 ssr-edge 入口 + override:true |
+| **AR4** rewrite query 合并 | ✗ CLI 顶不下 | 必须 runtime `applyRewrite()` 改 |
+
+### 9.7 与 vercel.json 对齐度
+
+| Vercel 能力 | edgeone.json 改造后 | 差距 |
+|---|---|---|
+| vercel.json headers | ✓ 完全对齐 | — |
+| vercel.json redirects | ✓ 完全对齐 | — |
+| vercel.json rewrites | ⚠ 对齐 95% | client query 合并需 runtime |
+| `has` / `missing` 条件 | ✓ 完全对齐 | 挂在 entry 上 |
+| 多跳 rewrite 链 | ✓ build 时压平 | 静态展开 |
+| next.config.js beforeFiles | ✗ 不支持 | edgeone.json 无此字段 |
+| next.config.js fallback | ✗ 不支持 | edgeone.json 无此字段 |
+
+**结论**：edgeone.json 等价于 vercel.json 的"瘦身版"——支持三段式平铺写法，不支持 Next 的 beforeFiles/fallback 分桶语义。对绝大多数用户够用。
+
+### 9.8 tef-cli 改造清单
+
+| # | 改动 | 位置 | 规模 |
+|---|---|---|---|
+| 1 | **删除 sortRoutes** | `generate-routes.ts:891` | -3 行 |
+| 2 | **桶顺序拼接** | `generate-routes.ts` | ~20 行 |
+| 3 | **function 入口枚举器** | `route-injector.ts` (新文件) | ~80 行 |
+| 4 | **rewrite 解析器（图遍历压平）** | `rewrite-resolver.ts` (新文件) | ~120 行 |
+| 5 | **edgeone.json schema 校验** | `validate-config.ts` (扩展) | ~30 行 |
+| **CLI 端合计** |  |  | **~250 行新代码 + 1 行删除** |
+| 6 | runtime: `applyRewrite()` 合并 client+dest query | edge router (非 CLI) | ~10 行 |
+| 7 | runtime: `dest` + `server-name` 同 entry 支持 | edge router (非 CLI) | 视情况 |
+
+### 9.9 验收手段
+
+改造完成后，跑 `probe-env.mjs` 三家并排测试：
+
+```
+预期结果（与 Vercel 完全一致）:
+
+ID          行为分歧点                       Env1                Env2                Env3
+CE2         filesystem vs afterFiles         filesystem 优先     filesystem 优先     filesystem 优先 ✓
+CE3         afterFiles vs dynamic-route      afterFiles 优先     afterFiles 优先     afterFiles 优先 ✓
+CE6         afterFiles 段 vs fallback 段     afterFiles 段优先   afterFiles 段优先   (不适用)        ✓
+SIBLING     afterFiles vs Edge static func   Edge function 优先  Edge function 优先  Edge function 优先 ✓
+AR4         rewrite destination query        不注入但透传        注入+透传 ✓         注入+透传 ✓     ✓
+
+发现 0 个分歧点 - 所有环境对齐到 Vercel 行为。
+```
+
+### 9.10 此方案放弃的能力（合理简化）
+
+为了让 edgeone.json 在两条硬约束下能落地，**有意放弃**以下三种 Vercel 能力：
+
+1. **beforeFiles rewrites**：在 filesystem 之前的"内部别名"重写
+2. **fallback rewrites**：仅在所有都不命中时的"最后兜底"重写
+3. **hit 阶段响应头注入**：命中函数后才注入的 cache-control 等
+
+用户如果**真的需要** beforeFiles / fallback，可以通过另两种手段近似实现：
+- beforeFiles → 让上游 CDN 做（Tencent EdgeOne 自身的 Rules Engine）
+- fallback → 把它写成 rewrite 的最后一条（顺序保证它最后才命中）
+
+### 9.11 一句话总结（按整体路线图视角）
+
+> **edgeone.json 的 headers/redirects/rewrites 全部按声明顺序原样翻译，CLI 不做二次排序**；rewrites 必须在 build 时静态展开成 `server-name + dest + override:true` 的终态 route；CLI 自动扫描 functions 目录注入显式入口替代 filesystem 阶段。三段桶之间相对顺序固定为 `redirects → headers → function 入口 → rewrites → 动态参数化`，与 Vercel 等价。
